@@ -1,0 +1,60 @@
+name: 'Cleanup Workflow Runs'
+description: 'Delete old workflow runs while maintaining minimum retention requirements'
+
+inputs:
+  repository:
+    description: 'Repository in the format owner/repo'
+    required: true
+  retention_days:
+    description: 'Number of days to retain workflow runs'
+    required: false
+    default: '28'
+  min_runs:
+    description: 'Minimum number of runs to keep per workflow'
+    required: false
+    default: '5'
+  github_token:
+    description: 'GitHub token with repo and workflow permissions'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Delete old workflow runs
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPOSITORY: ${{ inputs.repository }}
+        RETENTION_DAYS: ${{ inputs.retention_days }}
+        MIN_RUNS: ${{ inputs.min_runs }}
+      run: |
+        CUTOFF_DATE=$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)
+        echo "Deleting workflow runs older than: $CUTOFF_DATE"
+        
+        WORKFLOWS=$(gh api repos/${REPOSITORY}/actions/workflows --jq '.workflows[].id')
+        
+        for WORKFLOW_ID in $WORKFLOWS; do
+          echo "Processing workflow ID: $WORKFLOW_ID"
+          
+          RUNS=$(gh api repos/${REPOSITORY}/actions/workflows/$WORKFLOW_ID/runs \
+            --paginate \
+            --jq ".workflow_runs[] | select(.created_at < \"$CUTOFF_DATE\") | .id")
+          
+          TOTAL_RUNS=$(gh api repos/${REPOSITORY}/actions/workflows/$WORKFLOW_ID/runs \
+            --jq '.total_count')
+          
+          DELETED_COUNT=0
+          for RUN_ID in $RUNS; do
+            if [ $((TOTAL_RUNS - DELETED_COUNT)) -gt $MIN_RUNS ]; then
+              echo "Deleting run ID: $RUN_ID"
+              gh api -X DELETE repos/${REPOSITORY}/actions/runs/$RUN_ID || true
+              DELETED_COUNT=$((DELETED_COUNT + 1))
+            else
+              echo "Keeping run ID: $RUN_ID (minimum limit reached)"
+            fi
+          done
+          
+          echo "Workflow $WORKFLOW_ID: $DELETED_COUNT runs deleted"
+        done
+        
+        echo "Cleanup completed for $REPOSITORY"
