@@ -1,16 +1,16 @@
-name: Cleanup All Repositories
+name: Lock Closed Issues
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 permissions:
-  actions: write
+  issues: write
   contents: read
 
 jobs:
-  cleanup:
+  lock-issues:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -18,31 +18,25 @@ jobs:
       matrix:
         include:
           - repository: energy-tracker/home-assistant-energy-tracker
-            retention_days: 28
-            min_runs: 3
+            days_before_lock: 3
           - repository: energy-tracker/api-client-python
-            retention_days: 28
-            min_runs: 3
+            days_before_lock: 3
           - repository: energy-tracker/ioBroker.energy-tracker
-            retention_days: 28
-            min_runs: 3
+            days_before_lock: 3
           - repository: energy-tracker/github-automation
-            retention_days: 7
-            min_runs: 3
+            days_before_lock: 3
           - repository: energy-tracker/public-docs
-            retention_days: 7
-            min_runs: 3
-    
+            days_before_lock: 3
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      
-      - name: Clean up workflow runs for ${{ matrix.repository }}
-        uses: ./actions/cleanup-workflow-runs
+
+      - name: Lock closed issues for ${{ matrix.repository }}
+        uses: ./actions/lock-closed-issues
         with:
           repository: ${{ matrix.repository }}
-          retention_days: ${{ matrix.retention_days }}
-          min_runs: ${{ matrix.min_runs }}
+          days_before_lock: ${{ matrix.days_before_lock }}
           github_token: ${{ secrets.WORKFLOW_CLEANUP_TOKEN }}

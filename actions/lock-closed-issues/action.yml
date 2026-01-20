@@ -1,0 +1,63 @@
+name: 'Lock Closed Issues'
+description: 'Lock issues that have been closed for a specified number of days'
+
+inputs:
+  repository:
+    description: 'Repository in the format owner/repo'
+    required: true
+  days_before_lock:
+    description: 'Number of days after closing before locking the issue'
+    required: false
+    default: '3'
+  lock_reason:
+    description: 'Reason for locking (off-topic, too heated, resolved, spam)'
+    required: false
+    default: 'resolved'
+  github_token:
+    description: 'GitHub token with issues permissions'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Lock closed issues
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPOSITORY: ${{ inputs.repository }}
+        DAYS_BEFORE_LOCK: ${{ inputs.days_before_lock }}
+        LOCK_REASON: ${{ inputs.lock_reason }}
+      run: |
+        CUTOFF_DATE=$(date -u -d "${DAYS_BEFORE_LOCK} days ago" +%Y-%m-%dT%H:%M:%SZ)
+        echo "Locking issues closed before: $CUTOFF_DATE"
+        echo "Repository: $REPOSITORY"
+
+        # Get closed, unlocked issues that were closed before the cutoff date
+        ISSUES=$(gh api graphql -f query='
+          query($owner: String!, $repo: String!, $cursor: String) {
+            repository(owner: $owner, name: $repo) {
+              issues(states: CLOSED, first: 100, after: $cursor) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+                nodes {
+                  number
+                  closedAt
+                  locked
+                }
+              }
+            }
+          }
+        ' -f owner="${REPOSITORY%/*}" -f repo="${REPOSITORY#*/}" \
+          --jq '.data.repository.issues.nodes[] | select(.locked == false) | select(.closedAt < "'"$CUTOFF_DATE"'") | .number')
+
+        LOCK_COUNT=0
+        for ISSUE_NUMBER in $ISSUES; do
+          echo "Locking issue #$ISSUE_NUMBER"
+          gh api -X PUT "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/lock" \
+            -f lock_reason="$LOCK_REASON" || true
+          LOCK_COUNT=$((LOCK_COUNT + 1))
+        done
+
+        echo "Locked $LOCK_COUNT issue(s) in $REPOSITORY"
