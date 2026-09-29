@@ -23,6 +23,9 @@ jobs:
           - repository: energy-tracker/api-client-python
             retention_days: 28
             min_runs: 3
+          - repository: energy-tracker/api-client-typescript
+            retention_days: 28
+            min_runs: 3
           - repository: energy-tracker/ioBroker.energy-tracker
             retention_days: 28
             min_runs: 3
